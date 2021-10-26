@@ -5,6 +5,7 @@ import os
 import time
 import datetime
 
+
 content_type = {
         'html':'text/html', 'txt':'text/plain', 'png':'image/png', 'gif': 'image/gif', 'jpg':'image/jpg',
         'ico': 'image/x-icon', 'php':'application/x-www-form-urlencoded', '': 'text/plain', 'jpeg':'image/jpeg',
@@ -13,17 +14,11 @@ content_type = {
         }
 
 status_codes = {
-        200:'OK', 201: 'Created', 204: 'No Content', 301: 'Moved Permanently',304: 'Not Modified', 
+        200:'OK', 201: 'Created', 204: 'No Content', 206: 'Partial Content', 301: 'Moved Permanently',304: 'Not Modified', 
         400:'Bad Request', 401: 'Unauthorized', 403: 'Forbidden', 404:'Not Found', 408: 'Request Timeout',
         411: 'Length Required', 413: 'Payload Too Large', 414: 'URI Too Long', 
         415: 'Unsupported Media Type', 500: 'Internal Server Error', 501:'Not Implemented',
         503: 'Service Unavailable',     505:'HTTP Version not Supported'
-        }
-
-mode = {
-        'html':'r', 'txt':'r', 'png':'rb', 'gif': 'rb', 'jpg':'rb',
-        'ico': 'rb', 'php':'r', '': 'r', 'jpeg':'rb', 'pdf': 'r',
-        'js': 'r', 'css': 'r', 'mp3' : 'rb', 'mp4': 'rb'
         }
 
 
@@ -37,7 +32,7 @@ def parse_Http_Request(req):      # parse/handle the http request made by client
     req = {}
     if (len(start_line))>0:
         method = start_line[0]
-    req['method'] = method
+        req['method'] = method
     if (len(start_line)>1):
        req['uri'] = start_line[1]
     if (len(start_line)>2):
@@ -65,11 +60,12 @@ def get_statusCode_Headers(req,status_code,fileName):
     res += f"{req['version']} {status_code} {status_codes[status_code]}\n"
     res += "Date: "+ str(datetime.datetime.now().strftime("%a, %d %b %Y %H:%M:%S GMT")) + "\n"
     res += "Server: Apache/2.4.18 (Ubuntu)\n"
-    f = open(fileName,"r")
+    f = open(fileName,"rb")
     file_content= f.read()
     res += "Content-Type: text/html\n"
     res += "Content-Length: " + str(len(file_content)) + "\n"
     res += "Connection: Closed\n\n"
+    res = res.encode()
     if req['method'] == 'GET':
         res += file_content 
     return res
@@ -77,9 +73,28 @@ def get_statusCode_Headers(req,status_code,fileName):
 
 
 
+def Handle_range_Header(f,rangeList):
+    data = b''
+    for byteRange in rangeList:
+        byteRange = byteRange.split("-")
+        print(byteRange)
+        if byteRange[0].strip() == "" :
+            f.seek(0)
+            n=int(byteRange[1].strip())
+            data += f.read(n)
+        elif byteRange[1] == "" :
+            f.seek(int(byteRange[0].strip()))
+            data += f.read()
+        else:
+            f.seek(int(byteRange[0]))
+            n = int(byteRange[1].strip())-int(byteRange[0].strip())
+            data += f.read(n+1)
+
+    return data
+    
 
 def getOrHead_method(req):
-    global res
+    res= ""
     try:
         if req['uri']=='/':
             req['uri'] = "/index.html"
@@ -89,15 +104,29 @@ def getOrHead_method(req):
             if os.access(PATH,os.R_OK) :  # checking permission of file i.e accesible for reading or not
                 status_code = 200
                 fileName = req['uri'].strip('/')
+                #print(fileName)
                 split_file_name = fileName.split('.')
                 ext = split_file_name[1]
+                #print(ext)
                 if content_type.get(ext) == None :
                     status_code = 415
                     fileName = '415_unsupported_media.html'
                     res = get_statusCode_Headers(req,status_code,fileName)
                     return res
                 else:
-                    res = f"{req['version']} {status_code} {status_codes[status_code]}\n"
+                    #req['Range'] = None
+                    body =  b''
+                    f = open(fileName, "rb")
+                    if req.get('Range') != None :
+                        byteRange = req['Range'][6:]
+                        byteRange = byteRange.split(", ")
+                        print(byteRange)
+                        body += Handle_range_Header(f,byteRange)
+                        status_code = 206
+                    else:
+                        body += f.read()     # body
+                        status_code = 200
+                    res += f"{req['version']} {status_code} {status_codes[status_code]}\n"  # status line
                     res +="Date: "
                     date_time = str(datetime.datetime.now().strftime("%a, %d %b %Y %H:%M:%S GMT")) + "\n"
                     res += date_time
@@ -106,26 +135,27 @@ def getOrHead_method(req):
                     res += "\r\nLast_Modified: "
                     modification_time = time.ctime(os.path.getmtime(fileName))
                     last_modified = new_date_format(modification_time)
-                    res += last_modified
-                    f = open(fileName, mode[ext])
-                    text = f.read() 
-                    res += "\n"
-                    res += "Accept-Ranges: bytes"
+                    res += last_modified 
+                    res += "\nAccept-Ranges: bytes"
                     if req.get('Accept-Language') != None :
                         res += "\nContent-Language: "
                         res += req['Accept-Language']
-                    if mode.get(ext) != None :
+                    else:
+                        res += "\nContent-Language: en-US,en;q=0.9"
+
+                    if content_type.get(ext) != None :
                         cont_type = content_type[ext]
                         res += "\nContent-Type: "
                         res += cont_type
                     res += "\nContent-Length: "
-                    res += str(len(text))
+                    res += str(len(body))
                     res += "\nConnection: keep-alive"
                     res += "\n\n"
-                    if req['method'] == 'GET':
-                        res += text
-                    print(res)
-                    return res
+                    res = res.encode()
+                    if req['method']=='GET':
+                        res += body
+                    return res;
+
             else:
                 status_code = 403
                 #res =  f"{req['version']} {status_code} {status_codes[status_code]}\n\n"
@@ -153,11 +183,13 @@ def getOrHead_method(req):
     
 
     
-def httpResponse(req):
+def httpResponse(connection,req):
     if req['version'] == 'HTTP/1.1':
-        method = req['method']
+        method = req.get('method')
         if (method == 'GET' or method == 'HEAD') :
-            res=getOrHead_method(req)
+            res = getOrHead_method(req)
+            connection.send(res)
+            connection.close()
         elif method == 'POST':
             pass
         elif method == 'PUT':
@@ -170,6 +202,8 @@ def httpResponse(req):
         #res+=  "<h1> Http version Not supported! </h1>"
         fileName = '505_version.html'
         res = get_statusCode_Headers(req,status_code,fileName)
+        connection.send(res)
+        connection.close()
 
     else:
         status_code = 400
@@ -177,8 +211,9 @@ def httpResponse(req):
         #res+=  "<h1> Bad Request </h1>"
         fileName = '400_Bad_request.html'
         res = get_statusCode_Headers(req,status_code,fileName)
+        connection.send(res)
+        connection.close()
    
-        
 
 
 
@@ -200,11 +235,36 @@ def main():
         req = data.decode()
         req2 = parse_Http_Request(req)
         print(req2)
-        t1 = Thread(target = httpResponse, args = (req2, ))
+        t1 = Thread(target = httpResponse, args = (connection,req2,))
         t1.start()
-        time.sleep(0.001)
-        connection.send(res.encode())
-        connection.close()
+        #connection.send(res)
+        #connection.close()
 
 if __name__=="__main__":
     main()
+
+
+
+
+
+# Non-working code
+
+
+
+'''
+def Handle_Accept_Encoding():
+    if req.get('Accept-Encoding') != None :
+        encoding = req['Accept-Encoding'].split(", ")
+        print(encoding)
+        if 'gzip' in encoding :
+            try:
+                text = gzip.compress(bytes(text,'utf-8'))
+                res += '\nContent-Encoding: gzip'
+        elif 'deflate' in enconding :
+            text = zlib.compress(bytes(text,'utf-8'))
+            res+= '\nContent-Encoding: deflate'
+        else :
+            res += '\nContent-Encoding: br'
+
+'''
+
