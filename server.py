@@ -72,7 +72,7 @@ def get_statusCode_Headers(req,status_code,fileName):
     res += "Content-Length: " + str(len(file_content)) + "\n"
     res += "Connection: Closed\n\n"
     res = res.encode()
-    if req['method'] == 'GET':
+    if req['method'] != 'HEAD':
         res += file_content 
     return res
 
@@ -203,7 +203,47 @@ def getOrHead_method(req):
                 
 
 
-    
+def delete_method(req):
+    res = ""
+    if req['uri']=='/':
+        req['uri'] = "/index.html"
+    PATH = os.getcwd()
+    PATH += req['uri']
+    if os.path.isfile(PATH) :   #checking file exist or not
+        if (os.access(PATH,os.R_OK) and os.access(PATH, os.W_OK) ) :
+            fileName = req['uri'].strip('/')
+            f = open(fileName,"rb")
+            body = b''
+            body += f.read()
+            file_length = len(body)
+            if len(body)==0:
+                status_code = 204
+                res += f"{req['version']} {status_code} {status_codes[status_code]}"
+                res += "\n\n"
+                os.remove(fileName)
+                res = res.encode()
+                return res
+            else:
+                status_code = 200
+                res += f"{req['version']} {status_code} {status_codes[status_code]}"
+                res +="\nDate: "
+                date_time = str(datetime.datetime.now().strftime("%a, %d %b %Y %H:%M:%S GMT"))
+                res += date_time
+                os.remove(fileName)
+                res+= "\n\n"
+                res+= "<h1>File Deleted!</h1>\n"
+                res = res.encode()
+                return res
+        else:
+            status_code = 403
+            fileName = '403_forbidden.html'
+            res = get_statusCode_Headers(req,status_code,fileName)
+            return res
+    else:
+        status_code = 400
+        fileName = '400_Bad_request.html'
+        res = get_statusCode_Headers(req,status_code,fileName)
+        return res
 
     
 def httpResponse(connection,req):
@@ -218,7 +258,9 @@ def httpResponse(connection,req):
         elif method == 'PUT':
             pass
         elif method == 'DELETE':
-            pass
+            res = delete_method(req)
+            connection.send(res)
+            connection.close()
     elif req['version'][0:5] == 'HTTP/':
         status_code = 505 
         #res =  f"{req['version']} {status_code} {status_codes[status_code]}\n\n"
@@ -239,6 +281,17 @@ def httpResponse(connection,req):
    
 
 
+def quitServer(serverSocket):
+    while True:
+        cmd = input()
+        cmd = cmd.lower()
+        if (cmd == 'stop'):
+            print("Server stopped")
+            serverSocket.close()
+            os._exit(os.EX_OK)
+            break
+
+
 
 def main():
 
@@ -250,6 +303,9 @@ def main():
 
     serverSocket.listen(5)
     print(f'The server is ready to receive on http://127.0.0.1:{serverPort}')
+    
+    quit_thread = Thread(target = quitServer, args = (serverSocket,))
+    quit_thread.start()
 
     while True:
         connection,clientAddress = serverSocket.accept()
@@ -267,25 +323,4 @@ if __name__=="__main__":
 
 
 
-
-# Non-working code
-
-
-
-'''
-def Handle_Accept_Encoding():
-    if req.get('Accept-Encoding') != None :
-        encoding = req['Accept-Encoding'].split(", ")
-        print(encoding)
-        if 'gzip' in encoding :
-            try:
-                text = gzip.compress(bytes(text,'utf-8'))
-                res += '\nContent-Encoding: gzip'
-        elif 'deflate' in enconding :
-            text = zlib.compress(bytes(text,'utf-8'))
-            res+= '\nContent-Encoding: deflate'
-        else :
-            res += '\nContent-Encoding: br'
-
-'''
 
