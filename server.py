@@ -4,7 +4,8 @@ import sys
 import os
 import time
 import datetime
-
+import gzip
+import zlib
 
 content_type = {
         'html':'text/html', 'txt':'text/plain', 'png':'image/png', 'gif': 'image/gif', 'jpg':'image/jpg',
@@ -38,12 +39,20 @@ def parse_Http_Request(request):      # parse/handle the http request made by cl
         req['version'] = start_line[2]
 
     for line in reqlines:
-        if "If-Modified-Since" in line :
+        if "If-Modified-Since" in line :  #check if modified-since is present in request header or not 
             If_Modified = line
             reqlines.remove(line)
             If_Modified = If_Modified.split(":",1)
             req[If_Modified[0]] = If_Modified[1][1:]
             break
+        elif "If-Range" in line :            #check if modified-since is present in request header or not .
+            If_Range = line
+            reqlines.remove(line)
+            If_Range = If_Range.split(":",1)
+            req[If_Range[0]] = If_Range[1][1:]
+            break
+
+
 
     if len(reqlines)>1:
         for line in reqlines[1:-2]:
@@ -51,7 +60,6 @@ def parse_Http_Request(request):      # parse/handle the http request made by cl
             req[header[0]] = header[1][1:]
         if (method=='POST' or method=='PULL'):
             req['body']=reqlines[-1]
-    #print(req)
     return req
 
 
@@ -127,6 +135,34 @@ def Handle_If_Modified_Since(req,fileName):
     return status_code
 
 
+def Handle_If_Range(req,fileName):
+    if(req.get('Range')!=None):
+        If_Range = req['If-Range']
+        date_time = datetime.datetime.strptime(If_Range,"%a, %d %b %Y %H:%M:%S GMT")
+        prev_req_time_in_sec = int(time.mktime(date_time.timetuple()))  #get No of  second passed since epoch
+        file_modified_time_in_sec = int(os.path.getmtime(fileName))
+        if(prev_req_time_in_sec < file_modified_time_in_sec):
+                status_code = 200   #file modified send entire content
+        else:
+                status_code = 206   #Not-modified send the part of content client is requesting in range header
+    else:
+        status_code = 200 # ignore if if-range is present and range is absent.
+    return status_code
+
+
+
+def Handle_Content_Encoding(body,encoding):
+    res = ""
+    if 'gzip' in encoding :
+        body = gzip.compress(body)
+        res = '\nContent-Encoding: gzip'
+    elif 'deflate' in encoding :
+        body = zlib.compress(body)
+        res = '\nContent-Encoding: deflate'
+    else :
+        res = '\nContent-Encoding: br'
+    return res,body
+
 
 
 
@@ -169,7 +205,9 @@ def getOrHeadOrPost_method(req):
                     f = open(fileName, "rb")
                     if req.get('If-Modified-Since')!=None:
                         status_code = Handle_If_Modified_Since(req,fileName)
-                    if req.get('Range') != None :
+                    elif req.get('If-Range') != None :
+                        status_code = Handle_If_Range(req,fileName)
+                    elif req.get('Range') != None :
                         status_code = 206
                     #  handle resoponse body according to status code .
                     if (status_code == 200 ):
@@ -198,6 +236,11 @@ def getOrHeadOrPost_method(req):
                         res += req['Accept-Language']
                     else:
                         res += "\nContent-Language: en-US,en;q=0.9"
+                    if req.get('Accept-Encoding') != None :
+                        encoding = req['Accept-Encoding'].split(", ")
+                        Content_Encoding,body = Handle_Content_Encoding(body,encoding) 
+                        res += Content_Encoding
+                        print(encoding)
 
                     if content_type.get(ext) != None :
                         cont_type = content_type[ext]
