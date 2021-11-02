@@ -25,6 +25,7 @@ status_codes = {
 
 def parse_Http_Request(request):      # parse/handle the http request made by client
     reqlines = request.split("\r\n")
+    #print(reqlines)
     req = {}
 
     start_line = reqlines[0].split()
@@ -50,8 +51,23 @@ def parse_Http_Request(request):      # parse/handle the http request made by cl
             req[header[0]] = header[1][1:]
         if (method=='POST' or method=='PULL'):
             req['body']=reqlines[-1]
-
+    #print(req)
     return req
+
+
+# Utility function to stop the server
+
+def quitServer(serverSocket):
+    while True:
+        cmd = input()
+        cmd = cmd.lower()
+        if (cmd == 'stop'):
+            print("Server stopped")
+            serverSocket.close()
+            os._exit(os.EX_OK)
+            break
+
+
 
 
 # convert date from this form  Sun Oct 17 21:07:53 2021     to this form    Sun, 17 Oct 2021 21:07:53 GMT
@@ -69,6 +85,8 @@ def get_statusCode_Headers(req,status_code,fileName):
     f = open(fileName,"rb")
     file_content= f.read()
     res += "Content-Type: text/html\n"
+    if(status_code == 501):
+        res += "Allow: HEAD,GET,POST,PUT,DELETE\n"
     res += "Content-Length: " + str(len(file_content)) + "\n"
     res += "Connection: Closed\n\n"
     res = res.encode()
@@ -108,9 +126,24 @@ def Handle_If_Modified_Since(req,fileName):
             status_code = 304
     return status_code
 
-    
 
-def getOrHead_method(req):
+
+
+
+def getOrHeadOrPost_method(req):
+    if (req['method'] == 'POST') :
+        if req.get('body')!=None :
+            if req['Content-Type'] == "application/x-www-form-urlencoded" :
+                data = req['body']
+                data = data.replace("%40","@")
+                data = data.replace("%20"," ")
+                body_data = data.split("&")
+                data = {}
+                for i in body_data:
+                    key_value = i.split("=")
+                    data[key_value[0]] = key_value[1]
+                print(data)
+
     res= ""
     try:
         if req['uri']=='/':
@@ -175,28 +208,22 @@ def getOrHead_method(req):
                     res += "\nConnection: keep-alive"
                     res += "\n\n"
                     res = res.encode()
-                    if req['method']=='GET' :
+                    if req['method']!='HEAD' :
                         res += body
                     return res;
 
             else:
                 status_code = 403
-                #res =  f"{req['version']} {status_code} {status_codes[status_code]}\n\n"
-                #res+= "<h1> Forbidden file </h1>"
                 fileName = '403_forbidden.html'
                 res = get_statusCode_Headers(req,status_code,fileName)
                 return res
         else:
             status_code = 404
-            #res =  f"{req['version']} {status_code} {status_codes[status_code]}\n\n"
-            #res+= "<h1> Not found </h1>"
             fileName = 'Not_found.html'
             res = get_statusCode_Headers(req,status_code,fileName)
             return res
     except:
         status_code = 400
-        #res =  f"{req['version']} {status_code} {status_codes[status_code]}\n\n"
-        #res+=  "<h1> Bad Request </h1>"
         fileName = '400_Bad_request.html'
         res = get_statusCode_Headers(req,status_code,fileName)
         return res
@@ -245,52 +272,48 @@ def delete_method(req):
         res = get_statusCode_Headers(req,status_code,fileName)
         return res
 
+
+
+
     
 def httpResponse(connection,req):
-    if req['version'] == 'HTTP/1.1':
-        method = req.get('method')
-        if (method == 'GET' or method == 'HEAD') :
-            res = getOrHead_method(req)
-            connection.send(res)
-            connection.close()
-        elif method == 'POST':
-            pass
-        elif method == 'PUT':
-            pass
-        elif method == 'DELETE':
-            res = delete_method(req)
-            connection.send(res)
-            connection.close()
-    elif req['version'][0:5] == 'HTTP/':
-        status_code = 505 
-        #res =  f"{req['version']} {status_code} {status_codes[status_code]}\n\n"
-        #res+=  "<h1> Http version Not supported! </h1>"
-        fileName = '505_version.html'
-        res = get_statusCode_Headers(req,status_code,fileName)
-        connection.send(res)
-        connection.close()
+    try:
+        if req['version'] == 'HTTP/1.1':
+            method = req.get('method')
+            if (method == 'GET' or method == 'HEAD' or method == 'POST') :
+                res = getOrHeadOrPost_method(req)
+                connection.send(res)
+            elif method == 'PUT':
+                pass
+            elif method == 'DELETE':
+                res = delete_method(req)
+                connection.send(res)
+            else:
+                status_code = 501
+                fileName = '501_method_error.html'
+                res = get_statusCode_Headers(req,status_code,fileName)
+                connection.send(res)
 
-    else:
+
+        elif req['version'][0:5] == 'HTTP/':
+            status_code = 505 
+            fileName = '505_version.html'
+            res = get_statusCode_Headers(req,status_code,fileName)
+            connection.send(res)
+
+        else:
+            status_code = 400
+            fileName = '400_Bad_request.html'
+            res = get_statusCode_Headers(req,status_code,fileName)
+            connection.send(res)
+    except:
         status_code = 400
-        #res =  f"{req['version']} {status_code} {status_codes[status_code]}\n\n"
-        #res+=  "<h1> Bad Request </h1>"
         fileName = '400_Bad_request.html'
         res = get_statusCode_Headers(req,status_code,fileName)
         connection.send(res)
-        connection.close()
+    connection.close()
+
    
-
-
-def quitServer(serverSocket):
-    while True:
-        cmd = input()
-        cmd = cmd.lower()
-        if (cmd == 'stop'):
-            print("Server stopped")
-            serverSocket.close()
-            os._exit(os.EX_OK)
-            break
-
 
 
 def main():
