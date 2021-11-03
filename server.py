@@ -15,9 +15,8 @@ content_type = {
         }
 
 status_codes = {
-        200:'OK', 201: 'Created', 204: 'No Content', 206: 'Partial Content', 301: 'Moved Permanently',304: 'Not Modified', 
-        400:'Bad Request', 401: 'Unauthorized', 403: 'Forbidden', 404:'Not Found', 408: 'Request Timeout',
-        411: 'Length Required', 413: 'Payload Too Large', 414: 'URI Too Long', 
+        200:'OK', 201: 'Created', 204: 'No Content', 206: 'Partial Content', 301: 'Moved Permanently',304: 'Not Modified',        400:'Bad Request', 401: 'Unauthorized', 403: 'Forbidden', 404:'Not Found', 408: 'Request Timeout',
+        411: 'Length Required', 412: 'Precondition Failed', 413: 'Payload Too Large', 414: 'URI Too Long', 
         415: 'Unsupported Media Type', 500: 'Internal Server Error', 501:'Not Implemented',
         503: 'Service Unavailable',     505:'HTTP Version not Supported'
         }
@@ -51,6 +50,13 @@ def parse_Http_Request(request):      # parse/handle the http request made by cl
             If_Range = If_Range.split(":",1)
             req[If_Range[0]] = If_Range[1][1:]
             break
+        elif "If-Unmodified-Since" in line:
+            If_Unmodified = line
+            reqlines.remove(line)
+            If_Unmodified = If_Unmodified.split(":",1)
+            req[If_Unmodified[0]] = If_Unmodified[1][1:]
+            break
+
 
 
 
@@ -135,6 +141,23 @@ def Handle_If_Modified_Since(req,fileName):
     return status_code
 
 
+def Handle_If_Unmodified_Since(req,fileName):
+    try:       #valid date-time
+        If_Unmodified = req['If-Unmodified-Since']
+        date_time = datetime.datetime.strptime(If_Unmodified,"%a, %d %b %Y %H:%M:%S GMT")
+        prev_req_time_in_sec = int(time.mktime(date_time.timetuple()))  #get No of  second passed since epoch
+        file_modified_time_in_sec = int(os.path.getmtime(fileName))
+        if(prev_req_time_in_sec < file_modified_time_in_sec):
+                status_code = 412
+        else:
+                status_code = 200
+        return status_code
+
+    except:
+        return 200
+
+
+
 def Handle_If_Range(req,fileName):
     if(req.get('Range')!=None):
         If_Range = req['If-Range']
@@ -205,6 +228,8 @@ def getOrHeadOrPost_method(req):
                     f = open(fileName, "rb")
                     if req.get('If-Modified-Since')!=None:
                         status_code = Handle_If_Modified_Since(req,fileName)
+                    elif req['method'] == 'POST' and req.get('If-Unmodified-Since')!=None:
+                        status_code = Handle_If_Unmodified_Since(req,fileName)
                     elif req.get('If-Range') != None :
                         status_code = Handle_If_Range(req,fileName)
                     elif req.get('Range') != None :
@@ -219,6 +244,10 @@ def getOrHeadOrPost_method(req):
                         body += Handle_range_Header(f,byteRange)
                     elif (status_code == 304 ):
                         body = b''
+                    elif (status_code == 412 ):
+                        fileName = '412_precondition_failed.html'
+                        res = get_statusCode_Headers(req,status_code,fileName)
+                        return res
 
                     res += f"{req['version']} {status_code} {status_codes[status_code]}"  # status line
                     res +="\nDate: "
