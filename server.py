@@ -102,7 +102,10 @@ def get_statusCode_Headers(req,status_code,fileName):
     if(status_code == 501):
         res += "Allow: HEAD,GET,POST,PUT,DELETE\n"
     res += "Content-Length: " + str(len(file_content)) + "\n"
-    res += "Connection: Closed\n\n"
+    if (status_code==408):
+        res += "Connection: Closed\n\n"
+    else:
+        res += "Connection: keep-alive\n\n"
     res = res.encode()
     if req['method'] != 'HEAD':
         res += file_content 
@@ -191,17 +194,20 @@ def Handle_Content_Encoding(body,encoding):
 
 def getOrHeadOrPost_method(req):
     if (req['method'] == 'POST') :
-        if req.get('body')!=None :
-            if req['Content-Type'] == "application/x-www-form-urlencoded" :
-                data = req['body']
-                data = data.replace("%40","@")
-                data = data.replace("%20"," ")
-                body_data = data.split("&")
-                data = {}
-                for i in body_data:
-                    key_value = i.split("=")
-                    data[key_value[0]] = key_value[1]
-                print(data)
+        try:
+            if req.get('body')!=None :
+                if req['Content-Type'] == "application/x-www-form-urlencoded" :
+                    data = req['body']
+                    data = data.replace("%40","@")
+                    data = data.replace("%20"," ")
+                    body_data = data.split("&")
+                    data = {}
+                    for i in body_data:
+                        key_value = i.split("=")
+                        data[key_value[0]] = key_value[1]
+                    print(data)
+        except:
+            print("Post method has no body")
 
     res= ""
     try:
@@ -228,7 +234,7 @@ def getOrHeadOrPost_method(req):
                     f = open(fileName, "rb")
                     if req.get('If-Modified-Since')!=None:
                         status_code = Handle_If_Modified_Since(req,fileName)
-                    elif req['method'] == 'POST' and req.get('If-Unmodified-Since')!=None:
+                    elif req.get('If-Unmodified-Since')!=None:
                         status_code = Handle_If_Unmodified_Since(req,fileName)
                     elif req.get('If-Range') != None :
                         status_code = Handle_If_Range(req,fileName)
@@ -245,10 +251,7 @@ def getOrHeadOrPost_method(req):
                     elif (status_code == 304 ):
                         body = b''
                     elif (status_code == 412 ):
-                        fileName = '412_precondition_failed.html'
-                        res = get_statusCode_Headers(req,status_code,fileName)
-                        return res
-
+                        body = b''
                     res += f"{req['version']} {status_code} {status_codes[status_code]}"  # status line
                     res +="\nDate: "
                     date_time = str(datetime.datetime.now().strftime("%a, %d %b %Y %H:%M:%S GMT"))
@@ -269,7 +272,6 @@ def getOrHeadOrPost_method(req):
                         encoding = req['Accept-Encoding'].split(", ")
                         Content_Encoding,body = Handle_Content_Encoding(body,encoding) 
                         res += Content_Encoding
-                        print(encoding)
 
                     if content_type.get(ext) != None :
                         cont_type = content_type[ext]
@@ -277,7 +279,8 @@ def getOrHeadOrPost_method(req):
                         res += cont_type
                     res += "\nContent-Length: "
                     res += str(len(body))
-                    res += "\nConnection: keep-alive"
+                    res += "\nConnection: "
+                    res += req['Connection']
                     res += "\n\n"
                     res = res.encode()
                     if req['method']!='HEAD' :
@@ -348,41 +351,60 @@ def delete_method(req):
 
 
     
-def httpResponse(connection,req):
-    try:
-        if req['version'] == 'HTTP/1.1':
-            method = req.get('method')
-            if (method == 'GET' or method == 'HEAD' or method == 'POST') :
-                res = getOrHeadOrPost_method(req)
-                connection.send(res)
-            elif method == 'PUT':
-                pass
-            elif method == 'DELETE':
-                res = delete_method(req)
-                connection.send(res)
-            else:
-                status_code = 501
-                fileName = '501_method_error.html'
+def httpResponse(connection):
+    request = []   # to calculate no of request received on same connection
+    conn = True
+    while conn:
+        try:
+            data = connection.recv(1024)
+            req = data.decode()
+            req = parse_Http_Request(req)
+            if (req['Connection']=='Closed'):  # Handle Persistent , Non-persistent connection .
+                conn = False
+            start_time = time.time()  #return no of second since epoch
+            request.append(connection)
+            if len(request)>1:
+                time_required = int(start_time - end_time)  #time elapsed between last request and current request .
+                #print(time_required)
+                if time_required > 20 :
+                    status_code = 408
+                    fileName = '408_request_timeout.html'
+                    res = get_statusCode_Headers(req,status_code,fileName)
+                    connection.send(res)
+                    connection.close()
+                    break
+            if req['version'] == 'HTTP/1.1':
+                method = req.get('method')
+                if (method == 'GET' or method == 'HEAD' or method == 'POST') :
+                    res = getOrHeadOrPost_method(req)
+                    connection.send(res)
+                elif method == 'PUT':
+                    pass
+                elif method == 'DELETE':
+                    res = delete_method(req)
+                    connection.send(res)
+                else:
+                    status_code = 501
+                    fileName = '501_method_error.html'
+                    res = get_statusCode_Headers(req,status_code,fileName)
+                    connection.send(res)
+
+
+            elif req['version'][0:5] == 'HTTP/':
+                status_code = 505 
+                fileName = '505_version.html'
                 res = get_statusCode_Headers(req,status_code,fileName)
                 connection.send(res)
 
-
-        elif req['version'][0:5] == 'HTTP/':
-            status_code = 505 
-            fileName = '505_version.html'
-            res = get_statusCode_Headers(req,status_code,fileName)
-            connection.send(res)
-
-        else:
-            status_code = 400
-            fileName = '400_Bad_request.html'
-            res = get_statusCode_Headers(req,status_code,fileName)
-            connection.send(res)
-    except:
-        status_code = 400
-        fileName = '400_Bad_request.html'
-        res = get_statusCode_Headers(req,status_code,fileName)
-        connection.send(res)
+            else:
+                status_code = 400
+                fileName = '400_Bad_request.html'
+                res = get_statusCode_Headers(req,status_code,fileName)
+                connection.send(res)
+        except:
+            conn = False
+        end_time = time.time()
+    
     connection.close()
 
    
@@ -405,11 +427,7 @@ def main():
     while True:
         connection,clientAddress = serverSocket.accept()
         print("Connection Succesful at  :",clientAddress)
-        data = connection.recv(1024)
-        req = data.decode()
-        req2 = parse_Http_Request(req)
-        #print(req2)
-        t1 = Thread(target = httpResponse, args = (connection,req2,))
+        t1 = Thread(target = httpResponse, args = (connection,))
         t1.start()
 
 if __name__=="__main__":
