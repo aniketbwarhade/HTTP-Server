@@ -14,6 +14,7 @@ content_type = {
         'mp4': 'video/mp4'
         }
 
+
 status_codes = {
         200:'OK', 201: 'Created', 204: 'No Content', 206: 'Partial Content', 301: 'Moved Permanently',304: 'Not Modified',        400:'Bad Request', 401: 'Unauthorized', 403: 'Forbidden', 404:'Not Found', 408: 'Request Timeout',
         411: 'Length Required', 412: 'Precondition Failed', 413: 'Payload Too Large', 414: 'URI Too Long', 
@@ -64,7 +65,7 @@ def parse_Http_Request(request):      # parse/handle the http request made by cl
         for line in reqlines[1:-2]:
             header = line.split(":")
             req[header[0]] = header[1][1:]
-        if (method=='POST' or method=='PULL'):
+        if (method=='POST' or method=='PUT'):
             req['body']=reqlines[-1]
     return req
 
@@ -202,6 +203,7 @@ def getOrHeadOrPost_method(req):
                     data = data.replace("%20"," ")
                     body_data = data.split("&")
                     data = {}
+                    
                     for i in body_data:
                         key_value = i.split("=")
                         data[key_value[0]] = key_value[1]
@@ -257,7 +259,7 @@ def getOrHeadOrPost_method(req):
                     date_time = str(datetime.datetime.now().strftime("%a, %d %b %Y %H:%M:%S GMT"))
                     res += date_time
                     res += "\nServer: "
-                    res += "Apache/2.4.18 (Ubuntu)"
+                    res += "Apache/2.4.41 (Ubuntu)"
                     res += "\nLast_Modified: "
                     modification_time = time.ctime(os.path.getmtime(fileName))
                     last_modified = Handle_date_format(modification_time)
@@ -349,6 +351,63 @@ def delete_method(req):
 
 
 
+def putMethod(req):
+    res= ""
+    try:
+        if req['uri']=='/':
+            req['uri'] = "/index.html"
+        PATH = os.getcwd()
+        PATH += req['uri']
+        fileName = req['uri'].strip('/')
+        split_file_name = fileName.split('.')
+        ext = split_file_name[1]
+
+        status_code = None
+        if(req.get('Content-Length')!=0 and req.get('body')!='' ):
+            if os.path.isfile(PATH) :   #checking file exist or not                         
+                if os.access(PATH,os.R_OK) and os.access(PATH,os.W_OK) :
+                    status_code = 200
+                    f = open(fileName,"w")
+                    req_body = req['body']
+                    f.write(req_body)
+                    f.close()
+                else:
+                    status_code = 403
+                    fileName = '403_forbidden.html'
+                    res = get_statusCode_Headers(req,status_code,fileName)
+                    return res
+            else:
+                status_code = 201
+                f = open(fileName,"w")
+                req_body = req['body']
+                f.write(req_body)
+                f.close()
+        else:
+            status_code = 411
+            fileName = '411_length_required.html'
+            res = get_statusCode_Headers(req,status_code,fileName)
+            return res
+        res += f"{req['version']} {status_code} {status_codes[status_code]}\n"
+        res +="Date: "
+        date_time = str(datetime.datetime.now().strftime("%a, %d %b %Y %H:%M:%S GMT"))
+        res += date_time
+        res += "\nServer: Apache/2.4.41 (Ubuntu)\n"
+        if content_type.get(ext) != None :
+            cont_type = content_type[ext]
+            res += "Content-Type: "
+            res += cont_type
+        res += "\nConnection: Closed\n\n"
+        res = res.encode()
+        return res
+
+            
+
+    except:
+        status_code = 400
+        fileName = '400_Bad_request.html'
+        res = get_statusCode_Headers(req,status_code,fileName)
+        return res
+
 
     
 def httpResponse(connection):
@@ -379,7 +438,8 @@ def httpResponse(connection):
                     res = getOrHeadOrPost_method(req)
                     connection.send(res)
                 elif method == 'PUT':
-                    pass
+                    res = putMethod(req)
+                    connection.send(res)
                 elif method == 'DELETE':
                     res = delete_method(req)
                     connection.send(res)
