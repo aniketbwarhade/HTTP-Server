@@ -10,3 +10,7 @@ hello gys
 I am aniket warhade 
 third year student. 
 
+The POST request is a fundamental method, and this method is mostly used when a user wants to send some sensitive data to the server like to send a form or some confidential data. 
+The POST request is a fundamental method, and this method is mostly used when a user wants to send some sensitive data to the server like to send a form or some confidential data. 
+The POST request is a fundamental method, and this method is mostly used when a user wants to send some sensitive data to the server like to send a form or some confidential data. 
+The POST request is a fundamental method, and this method is mostly used when a user wants to send some sensitive data to the server like to send a form or some confidential data. 

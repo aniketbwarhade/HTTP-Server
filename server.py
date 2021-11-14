@@ -1,13 +1,16 @@
 from socket import *
 from threading import *
+from config import *
 import logging
 import sys
 import os
 import time
+import string
 import datetime
 import gzip
 import zlib
 import random
+import json
 content_type = {
         'html':'text/html', 'txt':'text/plain', 'png':'image/png', 'gif': 'image/gif', 'jpg':'image/jpg',
         'ico': 'image/x-icon', 'php':'application/x-www-form-urlencoded', '': 'text/plain', 'jpeg':'image/jpeg',
@@ -22,19 +25,19 @@ status_codes_description = {
         415: 'Unsupported Media Type', 500: 'Internal Server Error', 501:'Not Implemented',
         503: 'Service Unavailable',     505:'HTTP Version not Supported'
         }
-
 server = 'Apache/2.4.41 (Ubuntu)'
-host_address = '127.0.0.1'
-LOG_FILE_PATH = os.getcwd()+'/access.log'
-logging.basicConfig(filename=LOG_FILE_PATH, format='[%(asctime)s]: %(message)s', level=logging.DEBUG)
+status_code = None
+fileName = None
+logging.basicConfig(filename='access.log', format='127.0.0.1 -- [%(asctime)s]: %(message)s', level=logging.DEBUG)
 
 def parse_Http_Request(request):      # parse/handle the http request made by client
+    #print(request)
     reqlines = request.split("\r\n")
-    print(reqlines)
+    #print(reqlines)
     req = {}
 
     start_line = reqlines[0].split()
-    req['req_line'] = start_line
+    req['req_line'] = reqlines[0]
     if (len(start_line))>0:
         method = start_line[0]
         req['method'] = method
@@ -78,20 +81,12 @@ def parse_Http_Request(request):      # parse/handle the http request made by cl
     return req
 
 
-COOKIES = ['abcd', 'efgh', 'ijkl', 'mnop', 'qrst', 'uvwx']
-COOKIES_COUNT = {
-        'abcd': 0,
-        'efgh': 0,
-        'ijkl': 0,
-        'mnop': 0,
-        'qrst': 0,
-        'uvwx': 0
-        }
-
 def Set_cookies():
-    n = len(COOKIES)-1
-    index = random.randint(0, n)
-    value = COOKIES[index]
+    f = open('cookie.json','r')
+    cookie_count = json.load(f)
+    f.close()
+    # random alphanumeric id for cookie of length 5
+    value = ''.join(random.choices(string.ascii_uppercase + string.digits, k = 5))
     cookie = "Set-Cookie: id="
     cookie += value
     cookie += "; "
@@ -126,7 +121,7 @@ def Handle_date_format(s):
 
 def get_statusCode_Headers(req,status_code,fileName):
     res = ""
-    res += f"{req['version']} {status_code} {status_codes_description[status_code]}\n"
+    res += f"HTTP/1.1 {status_code} {status_codes_description[status_code]}\n"
     res += "Date: "+ str(datetime.datetime.now().strftime("%a, %d %b %Y %H:%M:%S GMT")) + "\n"
     res += "Server: Apache/2.4.18 (Ubuntu)\n"
     f = open(fileName,"rb")
@@ -238,7 +233,7 @@ def getOrHeadOrPost_method(req):
                     data = data.replace("%20"," ")
                     data = data.replace("=",": ")
                     body_data = data.split("&")
-                    print(body_data)
+                    #print(body_data)
                     req_body = ""
                     for i in body_data:
                         req_body += i + "\n"
@@ -257,108 +252,132 @@ def getOrHeadOrPost_method(req):
     try:
         if req['uri']=='/':
             req['uri'] = "/index.html"
-        PATH = os.getcwd()
+        PATH = HTML_FILE_PATH
         PATH += req['uri']
-        if os.path.isfile(PATH) :   #checking file exist or not                         
-            if os.access(PATH,os.R_OK) :  # checking permission of file i.e accesible for reading or not
-                status_code = 200
-                fileName = req['uri'].strip('/')
-                #print(fileName)
-                split_file_name = fileName.split('.')
-                ext = split_file_name[1]
-                #print(ext)
-                if content_type.get(ext) == None :
-                    status_code = 415
-                    fileName = '415_unsupported_media.html'
-                    res = get_statusCode_Headers(req,status_code,fileName)
-                    return res
-                else:
+        if (len(req['uri']) < MAX_URI_LENGTH ) :
+            if os.path.isfile(PATH) :   #checking file exist or not                         
+                if os.access(PATH,os.R_OK) :  # checking permission of file i.e accesible for reading or not
                     status_code = 200
-                    body =  b''
-                    f = open(fileName, "rb")
-                    if req.get('If-Modified-Since')!=None:
-                        status_code = Handle_If_Modified_Since(req,fileName)
-                    elif req.get('If-Unmodified-Since')!=None:
-                        status_code = Handle_If_Unmodified_Since(req,fileName)
-                    elif req.get('If-Range') != None :
-                        status_code = Handle_If_Range(req,fileName)
-                    elif req.get('Range') != None :
-                        status_code = 206
-                    
-                    #  handle resoponse body according to status code .
-                    if (status_code == 200 ):
-                        body += f.read()
-                    elif (status_code == 206 ) :
-                        byteRange = req['Range'][6:]
-                        byteRange = byteRange.split(", ")
-                        #print(byteRange)
-                        body += Handle_range_Header(f,byteRange)
-                    elif (status_code == 304 ):
-                        body = b''
-                    elif (status_code == 412 ):
-                        body = b''
-                    res += f"{req['version']} {status_code} {status_codes_description[status_code]}"  # status line
-                    res +="\nDate: "
-                    date_time = str(datetime.datetime.now().strftime("%a, %d %b %Y %H:%M:%S GMT"))
-                    res += date_time
-                    res += "\nServer: "
-                    res += "Apache/2.4.41 (Ubuntu)"
-                    res += "\nLast_Modified: "
-                    modification_time = time.ctime(os.path.getmtime(fileName))
-                    last_modified = Handle_date_format(modification_time)
-                    res += last_modified
-                    # check cookie is present or not
-                    if (req.get('Cookie') == None) :
-                        f = open('cookie.txt','a')
-                        cookie = Set_cookies()
-                        f.write(cookie)
-                        f.close()
-                        res += "\n"+cookie
+                    fileName = req['uri'].strip('/')
+                    #print(fileName)
+                    split_file_name = fileName.split('.')
+                    ext = split_file_name[1]
+                    #print(ext)
+                    if content_type.get(ext) == None :
+                        status_code = 415
+                        file_path = HTML_FILE_PATH + '/415_unsupported_media.html'
+                        res = get_statusCode_Headers(req,status_code,file_path)
+                        return res
                     else:
-                        id_value = req['Cookie'][3:]
-                        print(id_value)
+                        status_code = 200
+                        body =  b''
+                        f = open(PATH, "rb")
+                        if req.get('If-Modified-Since')!=None:
+                            status_code = Handle_If_Modified_Since(req,PATH)
+                        elif req.get('If-Unmodified-Since')!=None:
+                            status_code = Handle_If_Unmodified_Since(req,PATH)
+                        elif req.get('If-Range') != None :
+                            status_code = Handle_If_Range(req,PATH)
+                        elif req.get('Range') != None :
+                            status_code = 206
+                        
+                        #  handle resoponse body according to status code .
+                        if (status_code == 200 ):
+                            body += f.read()
+                        elif (status_code == 206 ) :
+                            byteRange = req['Range'][6:]
+                            byteRange = byteRange.split(", ")
+                            #print(byteRange)
+                            body += Handle_range_Header(f,byteRange)
+                        elif (status_code == 304 ):
+                            body = b''
+                        elif (status_code == 412 ):
+                            body = b''
+                        res += f"{req['version']} {status_code} {status_codes_description[status_code]}"  # status line
+                        res +="\nDate: "
+                        date_time = str(datetime.datetime.now().strftime("%a, %d %b %Y %H:%M:%S GMT"))
+                        res += date_time
+                        res += "\nServer: "
+                        res += "Apache/2.4.41 (Ubuntu)"
+                        res += "\nLast_Modified: "
+                        modification_time = time.ctime(os.path.getmtime(PATH))
+                        last_modified = Handle_date_format(modification_time)
+                        res += last_modified
+                        # check cookie is present or not
+                        if (req.get('Cookie') == None) :
+                            cookie = Set_cookies()
+                            res += "\n"+cookie
+                        else:
+                            id_value = req['Cookie'][3:]
+                            #print(id_value)
+                            k = open('cookie.json','r')
+                            cookie_count = json.load(k)
+                            #print(cookie_count)
+                            k.close()
+                            k = open('cookie.json','w')
+                            if (cookie_count.get(id_value)!=None):
+                                cookie_count[id_value] = cookie_count[id_value] + 1
+                            else:
+                                cookie_count[id_value] = 1
+                            json.dump(cookie_count,k)
+                            k.close()
 
-                    res += "\nAccept-Ranges: bytes"
-                    if req.get('Accept-Language') != None :
-                        res += "\nContent-Language: "
-                        res += req['Accept-Language']
-                    else:
-                        res += "\nContent-Language: en-US,en;q=0.9"
-                    if req.get('Accept-Encoding') != None :
-                        encoding = req['Accept-Encoding'].split(", ")
-                        Content_Encoding,body = Handle_Content_Encoding(body,encoding) 
-                        res += Content_Encoding
-                    if content_type.get(ext) != None :
-                        cont_type = content_type[ext]
-                        res += "\nContent-Type: "
-                        res += cont_type
-                    res += "\nContent-Length: "
-                    res += str(len(body))
-                    if req.get('Connection') != None :
-                        res += "\nConnection: "
-                        res += req['Connection']
-                    res += "\n\n"
-                    #print(res)
-                    res = res.encode()
-                    if req['method']!='HEAD' :
-                        res += body
-                    print(res)
-                    return res;
+                        res += "\nAccept-Ranges: bytes"
+                        if req.get('Accept-Language') != None :
+                            res += "\nContent-Language: "
+                            res += req['Accept-Language']
+                        else:
+                            res += "\nContent-Language: en-US,en;q=0.9"
+                        if req.get('Accept-Encoding') != None :
+                            encoding = req['Accept-Encoding'].split(", ")
+                            Content_Encoding,body = Handle_Content_Encoding(body,encoding) 
+                            res += Content_Encoding
+                        if content_type.get(ext) != None :
+                            cont_type = content_type[ext]
+                            res += "\nContent-Type: "
+                            res += cont_type
+                        res += "\nContent-Length: "
+                        res += str(len(body))
+                        if req.get('Connection') != None :
+                            res += "\nConnection: "
+                            res += req['Connection']
+                        res += "\n\n"
+                        res = res.encode()
+                        if req['method']!='HEAD' :
+                            res += body
+                        #print(res)
+                        file_length = os.path.getsize(PATH)
+                        logging.info(f" \"{req['req_line']}\" {status_code} {file_length} \"{server}\"\n")
+                        return res;
 
+                else:
+                    status_code = 403
+                    file_path = HTML_FILE_PATH + '/403_forbidden.html'
+                    res = get_statusCode_Headers(req,status_code,file_path)
+                    file_length = os.path.getsize(file_path)
+                    logging.info(f" \"{req['req_line']}\" {status_code} {file_length} \"{server}\"\n")
+                    return res
             else:
-                status_code = 403
-                fileName = '403_forbidden.html'
-                res = get_statusCode_Headers(req,status_code,fileName)
+                status_code = 404
+                file_path = HTML_FILE_PATH + '/Not_found.html'
+                file_length = os.path.getsize(file_path)
+                logging.error(f" \"{req['req_line']}\" {status_code} {file_length} \"{server}\"\n")
+                res = get_statusCode_Headers(req,status_code,file_path)
                 return res
+
         else:
-            status_code = 404
-            fileName = 'Not_found.html'
-            res = get_statusCode_Headers(req,status_code,fileName)
+            status_code = 414
+            file_path = HTML_FILE_PATH + '/414_uri.html'
+            file_length = os.path.getsize(file_path)
+            logging.error(f" \"{req['req_line']}\" {status_code} {file_length} \"{server}\"\n")
+            res = get_statusCode_Headers(req,status_code,file_path)
             return res
     except:
         status_code = 400
-        fileName = '400_Bad_request.html'
-        res = get_statusCode_Headers(req,status_code,fileName)
+        file_path = HTML_FILE_PATH + '/400_Bad_request.html'
+        file_length = os.path.getsize(file_path)
+        res = get_statusCode_Headers(req,status_code,file_path)
+        logging.info(f" \"{req['req_line']}\" {status_code} {file_length} \"{server}\"\n")
         return res
                 
 
@@ -367,12 +386,12 @@ def delete_method(req):
     res = ""
     if req['uri']=='/':
         req['uri'] = "/index.html"
-    PATH = os.getcwd()
+    PATH = HTML_FILE_PATH
     PATH += req['uri']
     if os.path.isfile(PATH) :   #checking file exist or not
         if (os.access(PATH,os.R_OK) and os.access(PATH, os.W_OK) ) :
             fileName = req['uri'].strip('/')
-            f = open(fileName,"rb")
+            f = open(PATH,"rb")
             body = b''
             body += f.read()
             file_length = len(body)
@@ -380,29 +399,33 @@ def delete_method(req):
                 status_code = 204
                 res += f"{req['version']} {status_code} {status_codes_description[status_code]}"
                 res += "\n\n"
-                os.remove(fileName)
+                file_length = os.path.getsize(PATH)
+                os.remove(PATH)
                 res = res.encode()
+                logging.info(f" \"{req['req_line']}\" {status_code} {file_length} \"{server}\"\n")
                 return res
             else:
                 status_code = 200
-                res += f"{req['version']} {status_code} {status_codes_description[status_code]}"
-                res +="\nDate: "
-                date_time = str(datetime.datetime.now().strftime("%a, %d %b %Y %H:%M:%S GMT"))
-                res += date_time
-                os.remove(fileName)
-                res+= "\n\n"
-                res+= "<h1>File Deleted!</h1>\n"
+                os.remove(PATH)
+                file_path = HTML_FILE_PATH + '/delete.html'
+                res += get_statusCode_Headers(req,status_code,file_path)
                 res = res.encode()
+                file_length = os.path.getsize(file_path)
+                logging.info(f" \"{req['req_line']}\" {status_code} {file_length} \"{server}\"\n")
                 return res
         else:
             status_code = 403
-            fileName = '403_forbidden.html'
-            res = get_statusCode_Headers(req,status_code,fileName)
+            file_path = HTML_FILE_PATH + '/403_forbidden.html'
+            res = get_statusCode_Headers(req,status_code,file_path)
+            file_length = os.path.getsize(file_path)
+            logging.info(f" \"{req['req_line']}\" {status_code} {file_length} \"{server}\"\n")
             return res
     else:
         status_code = 400
-        fileName = '400_Bad_request.html'
-        res = get_statusCode_Headers(req,status_code,fileName)
+        file_path = HTML_FILE_PATH + '/400_Bad_request.html'
+        res = get_statusCode_Headers(req,status_code,file_path)
+        file_length = os.path.getsize(file_path)
+        logging.info(f" \"{req['req_line']}\" {status_code} {file_length} \"{server}\"\n")
         return res
 
 
@@ -412,7 +435,7 @@ def putMethod(req):
     try:
         if req['uri']=='/':
             req['uri'] = "/index.html"
-        PATH = os.getcwd()
+        PATH = HTML_FILE_PATH
         PATH += req['uri']
         fileName = req['uri'].strip('/')
         split_file_name = fileName.split('.')
@@ -423,25 +446,27 @@ def putMethod(req):
             if os.path.isfile(PATH) :   #checking file exist or not                         
                 if os.access(PATH,os.R_OK) and os.access(PATH,os.W_OK) :
                     status_code = 200
-                    f = open(fileName,"w")
+                    f = open(PATH,"w")
                     req_body = req['body']
                     f.write(req_body)
                     f.close()
                 else:
                     status_code = 403
-                    fileName = '403_forbidden.html'
-                    res = get_statusCode_Headers(req,status_code,fileName)
+                    file_path = HTML_FILE_PATH + '/403_forbidden.html'
+                    res = get_statusCode_Headers(req,status_code,file_path)
                     return res
             else:
                 status_code = 201
-                f = open(fileName,"w")
+                f = open(PATH,"w")
                 req_body = req['body']
                 f.write(req_body)
                 f.close()
         else:
             status_code = 411
-            fileName = '411_length_required.html'
-            res = get_statusCode_Headers(req,status_code,fileName)
+            file_path = HTML_FILE_PATH + '/411_length_required.html'
+            res = get_statusCode_Headers(req,status_code,file_path)
+            file_length = os.path.getsize(file_path)
+            logging.info(f" \"{req['req_line']}\" {status_code} {file_length} \"{server}\"\n")
             return res
         res += f"{req['version']} {status_code} {status_codes_description[status_code]}\n"
         res +="Date: "
@@ -454,14 +479,13 @@ def putMethod(req):
             res += cont_type
         res += "\nConnection: Closed\n\n"
         res = res.encode()
+        file_length = os.path.getsize(PATH)
+        logging.info(f" \"{req['req_line']}\" {status_code} {file_length} \"{server}\"\n")
         return res
-
-            
-
     except:
         status_code = 400
-        fileName = '400_Bad_request.html'
-        res = get_statusCode_Headers(req,status_code,fileName)
+        file_path = HTML_FILE_PATH + '/400_Bad_request.html'
+        res = get_statusCode_Headers(req,status_code,file_path)
         return res
 
 
@@ -484,11 +508,11 @@ def httpResponse(connection):
                 #print(time_required)
                 if time_required > 20 :
                     status_code = 408
-                    fileName = '408_request_timeout.html'
-                    file_length = os.path.getsize(fileName)
-                    res = get_statusCode_Headers(req,status_code,fileName)
+                    file_path = HTML_FILE_PATH + '/408_request_timeout.html'
+                    file_length = os.path.getsize(file_path)
+                    logging.info(f" {req['req_line']}\" {status_code} {file_length} \"{server}\"\n")
+                    res = get_statusCode_Headers(req,status_code,file_path)
                     connection.send(res)
-                    logging.info(f"{host_address}: \"{req['req_line']}\" {status_code} {file_length} \"{server}\"\n")
                     connection.close()
                     break
             if req['version'] == 'HTTP/1.1':
@@ -504,23 +528,25 @@ def httpResponse(connection):
                     connection.send(res)
                 else:
                     status_code = 501
-                    fileName = '501_method_error.html'
-                    res = get_statusCode_Headers(req,status_code,fileName)
+                    file_path = HTML_FILE_PATH + '/501_method_error.html'
+                    res = get_statusCode_Headers(req,status_code,file_path)
+                    file_length = os.path.getsize(file_path)
+                    logging.info(f" {req['req_line']}\" {status_code} {file_length} \"{server}\"\n")
                     connection.send(res)
-
 
             elif req['version'][0:5] == 'HTTP/':
                 status_code = 505 
-                fileName = '505_version.html'
-                file_length = os.path.getsize(fileName)
-                res = get_statusCode_Headers(req,status_code,fileName)
-                logging.info(f"{host_address}: \"{req['req_line']}\" {status_code} {file_length} \"{server}\"\n")
+                file_path = HTML_FILE_PATH + '/505_version.html'
+                file_length = os.path.getsize(file_path)
+                res = get_statusCode_Headers(req,status_code,file_path)
                 connection.send(res)
 
             else:
                 status_code = 400
-                fileName = '400_Bad_request.html'
-                res = get_statusCode_Headers(req,status_code,fileName)
+                file_path = HTML_FILE_PATH + '/400_Bad_request.html'
+                res = get_statusCode_Headers(req,status_code,file_path)
+                file_length = os.path.getsize(file_path)
+                logging.info(f" {req['req_line']}\" {status_code} {file_length} \"{server}\"\n")
                 connection.send(res)
         except:
             conn = False
