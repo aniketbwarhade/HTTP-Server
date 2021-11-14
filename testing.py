@@ -6,7 +6,7 @@ import webbrowser
 
 port = sys.argv[1]
 IP = '127.0.0.1'
-
+serverport = int(port)
 BASIC_URL_PART = "http://" + IP + ":" + port 
 
 def Get_requests():
@@ -111,7 +111,14 @@ def Post_requests():
     f=open(file_path,'r')
     print(f.read())
     f.close()
-    print("-------------------------------------------------------------------------------------------------------------------------------------------")
+    print("-------------------------------------------------------------------------------------------------------------------------------------------"
+
+
+
+
+
+
+
 
 
 def Put_request():
@@ -179,12 +186,12 @@ def Head_requests():
 
 def version_not_supported():
     clientSocket = socket(AF_INET, SOCK_STREAM)
-    clientSocket.connect((serverName,serverPort))
+    clientSocket.connect((IP,serverport))
     request = "HEAD /index.html HTTP/2.1"
     clientSocket.send(request.encode())
     response = clientSocket.recv(1024)
     print(response.decode())
-    print('---HEAD /index.html HTTP/2.1---\n\n',response.decode())
+    print('---------------------------------------------------------------------HEAD /index.html HTTP/2.1-----------------------------------------------------------------------\n\n',response.decode())
     clientSocket.close()
 
 def main():
