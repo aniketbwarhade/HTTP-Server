@@ -1,4 +1,4 @@
-#Http-Server
+# Http-Server
 
 ## Team Members:
 
@@ -61,7 +61,7 @@
 	GET request returns status 505 when the specified HTTP version in the request is other than HTTP/1.1 .
 
 
-    ## POST Method:
+## POST Method:
 	Status 200 OK:
 	POST request retuens 200 when the request is successful.
 	
