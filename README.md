@@ -2,10 +2,12 @@
 
 ## Team Members:
 
-    Division 1
-	Batch: T1
 	111903017  Aniket Warhade
 	111903014  Anant Mhaske
+
+## Prerequisites
+
+1. Python 3.x
 
 ## Steps to run the project:
 
@@ -33,6 +35,13 @@
 - *Testing* - Implemented different test cases using request and webserver module.
 
 6. **Implemented Cookies and handled Persistent and non-Persistent connections**
+
+
+## 🎉 Acknowledgements <a name = "acknowledgement"></a>
+
+- [RFC2616](https://tools.ietf.org/html/rfc2616)
+- [MDN](https://developer.mozilla.org/en-US/docs/Web/HTTP)
+
 
 ## GET Method:
 
