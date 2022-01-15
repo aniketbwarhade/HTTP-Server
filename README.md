@@ -31,10 +31,10 @@
 
 3. **Multithreading in server**: Implemented multithreading in server to run multiple requests simultaneously
 
-5. **Automated Tests**: .
+4. **Automated Tests**: .
 - *Testing* - Implemented different test cases using request and webserver module.
 
-6. **Implemented Cookies and handled Persistent and non-Persistent connections**
+5. **Implemented Cookies and handled Persistent and non-Persistent connections**
 
 
 ## 🎉 Acknowledgements <a name = "acknowledgement"></a>
